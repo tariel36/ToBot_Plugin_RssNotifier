@@ -260,6 +260,45 @@ namespace ToBot.Plugin.PluginRssNotifier
 
         #endregion
 
+        #region ListLatest
+
+        [IsCommand]
+        public async Task ListLatest(CommandExecutionContext ctx)
+        {
+            List<Tuple<WatchedRss, RssEntry>> toNotify = new List<Tuple<WatchedRss, RssEntry>>();
+
+            RssClient rssClient = new RssClient();
+
+            foreach (WatchedRss entry in Entries.Values)
+            {
+                entry.LastUpdate = DateTime.UtcNow;
+
+                RssEntryCollection collection = rssClient.Get(entry.Url);
+                RssEntry lastLive = collection.Entries
+                    .OrderByDescending(x => x.PublishDate)
+                    .FirstOrDefault();
+
+                entry.LastPublishDate = lastLive.PublishDate ?? DateTime.UtcNow;
+
+                toNotify.Add(Tuple.Create(entry, lastLive));
+
+                Repository.SetItem(entry);
+            }
+
+            StringBuilder sb = new StringBuilder(10240);
+
+            foreach (Tuple<WatchedRss, RssEntry> tuple in toNotify)
+            {
+                bool? isLive = IsLive(tuple.Item2);
+
+                sb.AppendLine($"{tuple.Item1.Title} - latest video (IsLive: `{(isLive.HasValue ? isLive.Value.ToString() : "NULL")}`): {MessageFormatter.NoEmbed(tuple.Item2.Link)}");
+            }
+
+            await ctx.Context.RespondStringAsync(sb.ToString());
+        }
+
+        #endregion
+
         private void ContentWatcherProcedure(ContentWatcherContext ctx)
         {
             List<Tuple<WatchedRss, RssEntry>> toNotify = new List<Tuple<WatchedRss, RssEntry>>();
@@ -274,7 +313,6 @@ namespace ToBot.Plugin.PluginRssNotifier
 
                     RssEntryCollection collection = rssClient.Get(entry.Url);
                     RssEntry lastLive = collection.Entries
-                        .Where(x => true /* TODO Use IsLive if it will work during testing period. */)
                         .OrderByDescending(x => x.PublishDate)
                         .FirstOrDefault();
                         
@@ -305,7 +343,7 @@ namespace ToBot.Plugin.PluginRssNotifier
             {
                 bool? isLive = IsLive(tuple.Item2);
 
-                sb.AppendLine($"{tuple.Item1.Title} is streaming (status IsLive: `{(isLive.HasValue ? isLive.Value.ToString() : "NULL")}`): {MessageFormatter.NoEmbed(tuple.Item2.Link)}");
+                sb.AppendLine($"{tuple.Item1.Title} uploaded new video (status IsLive: `{(isLive.HasValue ? isLive.Value.ToString() : "NULL")}`): {MessageFormatter.NoEmbed(tuple.Item2.Link)}");
             }
 
             string message = sb.ToString();
